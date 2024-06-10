@@ -1,9 +1,7 @@
-#[allow(unuseds)]
+#[allow(unused)]
+mod fecha;
+mod usuario;
+mod sistema;
 
 fn main() {
-    println!("Hello, world!");
-    print!("holaaa");
-    print!("Soy Camilo");
-    //prueba si cambia 
-
 }
