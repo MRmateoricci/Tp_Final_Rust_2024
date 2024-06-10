@@ -7,6 +7,7 @@ pub struct sistema{
     votantes:Vec<Votante>,
     candidatos:Vec<Candidato>,
     admin:Administrador,
+    //ajkbndkasjfbkafbask
 
 }
 impl sistema{
