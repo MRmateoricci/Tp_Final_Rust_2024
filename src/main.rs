@@ -6,8 +6,4 @@ fn main() {
     print!("Soy Camilo");
     //prueba si cambia 
 
-
-
-
-
 }
