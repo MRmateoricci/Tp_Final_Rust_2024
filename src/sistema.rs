@@ -6,8 +6,7 @@ pub struct sistema{
     usuarios:Vec<usuario::Rol>,
     votantes:Vec<Votante>,
     candidatos:Vec<Candidato>,
-    admin:Administrador,
-    //ajkbndkasjfbkafbask
+    admin:Administrador
 
 }
 impl sistema{
