@@ -5,6 +5,7 @@ mod sistema {
     use ink::prelude::vec::Vec;
     use ink::prelude::string::String;
 
+
     #[ink::scale_derive(Encode, Decode, TypeInfo)]
     #[cfg_attr(
         feature = "std",
@@ -50,6 +51,7 @@ mod sistema {
         pub anio:i32
     }
 
+
     #[ink::scale_derive(Encode, Decode, TypeInfo)]
     #[cfg_attr(
         feature = "std",
@@ -59,7 +61,8 @@ mod sistema {
     struct Votacion{
         id:i32,
         puesto:String,
-        candidatos:Vec<Usuario>,
+        candidatos:Vec<AccountId>,
+        votantes: Vec<AccountId>,
         votos: Vec<u32>,    // hashmap con accountid de candidato
         votaron: Vec<AccountId>,
         fecha_inicio:Fecha,
@@ -68,7 +71,7 @@ mod sistema {
     impl Votacion{
         pub fn new(id:i32,puesto:String, fecha_inicio:Fecha, fecha_fin:Fecha)-> Votacion{
             Votacion {
-                id, puesto, candidatos:Vec::new(), votos:Vec::new(), votaron:Vec::new(),fecha_inicio, fecha_fin
+                id, puesto, candidatos:Vec::new(),votantes:Vec::new(), votos:Vec::new(), votaron:Vec::new(),fecha_inicio, fecha_fin
             }
         }
 
@@ -80,6 +83,9 @@ mod sistema {
            true 
         }
 
+        pub fn existe(&self, acc_id:AccountId)->bool{
+            return self.candidatos.iter().any(|u| *u == acc_id) | self.votantes.iter().any(|u| *u == acc_id)
+        }
 
     }
 
@@ -89,10 +95,9 @@ mod sistema {
     pub struct Sistema {
         nombre_administrador:String,
         usuarios_reg: Vec<Usuario>, // hashmap con account id
-        espera:Vec<AccountId>,
+        espera_candidatos:Vec<(AccountId,i32)>,
+        espera_votantes:Vec<(AccountId,i32)>,
         votaciones:Vec<Votacion>,  // hashmap con id de votacion
-        votantes: Vec<Usuario>,
-        candidatos: Vec<Usuario>,
         admin:AccountId,
     }
     
@@ -101,7 +106,7 @@ mod sistema {
         
         #[ink(constructor)]
         pub fn new(nombre_administrador: String) -> Self {
-            Self { nombre_administrador,espera:Vec::new(), usuarios_reg:Vec::new(),votaciones: Vec::new(),votantes:Vec::new(),candidatos:Vec::new(), admin: Self::env().caller() }
+            Self { nombre_administrador,espera_candidatos:Vec::new(),espera_votantes:Vec::new(), usuarios_reg:Vec::new(),votaciones: Vec::new(), admin: Self::env().caller() }
         }
 
         #[ink(message)]
@@ -125,18 +130,47 @@ mod sistema {
 
 
         #[ink(message)]
-        pub fn postularse_como_candidato(&mut self,id_de_votacion:i32){
+        pub fn postularse_a_votacion(&mut self,rol:Rol, id_de_votacion:i32){
             let caller = self.env().caller();
-            self.usuarios_reg.iter_mut().for_each(|u|{
-                if u.acc_id==caller {
-                    if !u.verificado && !self.espera.contains(&caller){
-
-                        u.rol = Some(Rol::Candidato);
-                        self.espera.push(caller);
-                    }   
-                }
-            })
+            if let Some(us) = self.usuarios_reg.iter_mut().find(|u| u.acc_id == caller){
+                if let Some(v) = self.votaciones.iter_mut().find(|vot| vot.id == id_de_votacion){
+                    if !v.existe(caller) {  
+                        match rol{// agregar la verificacion para cada uno de que la votacion este vigente como para postularse como votante o que no haya empezado para postularse como candidato 
+                            Rol::Candidato=>{ self.espera_candidatos.push((caller,id_de_votacion)); }, 
+                            Rol::Votante=> {  self.espera_votantes.push((caller,id_de_votacion)); }
+                        }
+                    }
+                } 
+            }
         }
+
+
+        #[ink(message)] 
+        pub fn validar_candidato(&mut self, aceptar:bool)->Option<AccountId>{
+            let mut aux: Option<AccountId> = None;
+            let caller = self.env().caller();
+            if caller == self.admin {
+                if !self.espera_candidatos.is_empty() {
+                    let acc_id = self.espera_candidatos[0].0;
+                    aux = Some(acc_id);
+                    self.usuarios_reg.iter_mut().for_each(|u| {
+                        if u.acc_id == acc_id {
+                            if let Some(vot) = self.votaciones.iter_mut().find(|v| v.id == self.espera_candidatos[0].1){
+                                if aceptar{
+                                    vot.candidatos.push(acc_id);
+                                }
+                            }
+                            self.espera_candidatos.remove(0);
+                        }
+                    })
+                }
+            }
+            ink::env::debug_println!("HOLAAAAAAAAAAAAAAAA");
+            aux
+        }
+
+
+
 
         #[ink(message)]
         pub fn postularse_como_votante(&self){
