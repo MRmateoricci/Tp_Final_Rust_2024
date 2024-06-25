@@ -5,7 +5,6 @@ mod sistema {
     use ink::prelude::vec::Vec;
     use ink::prelude::string::String;
 
-
     #[ink::scale_derive(Encode, Decode, TypeInfo)]
     #[cfg_attr(
         feature = "std",
@@ -76,27 +75,24 @@ mod sistema {
         }
 
 
-        pub fn get_cant_candidatos_vot(&self,id:i32)->i32{
+        pub fn get_cant_candidatos_vot(&self)->i32{
             let x = self.candidatos.len();
             x as i32
         }
 
-        pub fn get_cant_votantes_vot(&self,id:i32)->i32{
+        pub fn get_cant_votantes_vot(&self)->i32{
             let x = self.votantes.len();
             x as i32
         }
         
-        pub fn inicio(&self)->bool{
+        pub fn inicio(&self)->bool{  // trabajar con fechas
             true
         }
 
-        pub fn finalizo(&self)->bool{
+        pub fn finalizo(&self)->bool{ // trabajar con fechas
            true 
         }
 
-        pub fn existe(&self, acc_id:AccountId)->bool{
-            return self.candidatos.iter().any(|u| *u == acc_id) | self.votantes.iter().any(|u| *u == acc_id)
-        }
 
 
         pub fn es_votante(&self, acc_id:AccountId)->bool{
@@ -150,42 +146,42 @@ mod sistema {
         #[ink(message)]
         pub fn registrar_usuario(&mut self, nom:String,apellido:String,edad:i32, dni:i32){
             let caller = self.env().caller();
-            if caller != self.admin{
+            if caller != self.admin{  //el administrador no se puede registrar como un usuario 
                 let aux:Usuario = Usuario::new(nom, apellido, dni,edad,false, None, caller);
                 if edad >= 18 {
-                    if  !self.usuarios_reg.iter().any(|u|u.dni == dni){
-                    self.usuarios_reg.push(aux);
+                    if  !self.usuarios_reg.iter().any(|u|u.dni == dni){  // no puede haber dos usuarios con el mismo dni 
+                        self.usuarios_reg.push(aux);
                     }
                 }
             }
         }
 
         #[ink(message)]
-        pub fn crear_votacion(&mut self, id:i32, puesto:String,fecha_inicio:Fecha,fecha_fin:Fecha){
+        pub fn crear_votacion(&mut self, id:i32, puesto:String,fecha_inicio:Fecha,fecha_fin:Fecha){ 
             let caller = self.env().caller();
-            if caller == self.admin {
-                let v = Votacion::new(id, puesto, fecha_inicio, fecha_fin);
-                self.votaciones.push(v);
+            if caller == self.admin {  //solo el administrador puede crear votaciones
+                if !self.votaciones.iter().any(|v|v.id==id){  //no se tiene que poder crear dos votaciones con el mismo id
+                    let v = Votacion::new(id, puesto, fecha_inicio, fecha_fin);
+                    self.votaciones.push(v);        
+                }
             }
+                
         }
 
 
         #[ink(message)]
         pub fn postularse_a_votacion(&mut self,rol:Rol, id_de_votacion:i32){
             let caller = self.env().caller();
-            if caller != self.admin{
-                if self.usuarios_reg.iter().any(|u| u.acc_id == caller){
-                    if let Some(v) = self.votaciones.iter_mut().find(|vot| vot.id == id_de_votacion){
-                        if !v.existe(caller) {  
-                            match rol{ // agregar la verificacion para cada uno de que la votacion este vigente (fechas) como para postularse como votante o que no haya empezado para postularse como candidato 
+                if self.usuarios_reg.iter().any(|u| u.acc_id == caller){   // como el administrador no puede registrarse, si se intenta postular aca va a dar falso
+                    if let Some(v) = self.votaciones.iter_mut().find(|vot| vot.id == id_de_votacion){  //si existe la votacion a la que se quiere postular 
+                        if !v.es_votante(caller) && !v.es_candidato(caller){ // si ya no esta postulado como votante o candidato
+                            match rol{ // AGREGAR la verificacion para cada uno de que la votacion este vigente (fechas) como para postularse como votante o que no haya empezado para postularse como candidato 
                                 Rol::Candidato=>{ self.espera_candidatos.push((caller,id_de_votacion)); }, 
                                 Rol::Votante=> {  self.espera_votantes.push((caller,id_de_votacion)); }
                             }
                         }
                     } 
                 }
-            }
-            
         }
 
 
@@ -194,19 +190,19 @@ mod sistema {
             let mut aux: Option<AccountId> = None;
             let mut vot_id=0;
             let caller = self.env().caller();
-            if caller == self.admin {
-                if !self.espera_candidatos.is_empty() {
+            if caller == self.admin {  // solo el administrador puede validar candidatos 
+                if !self.espera_candidatos.is_empty() {  // checkea si hay candidatos a validar, y si hay se empieza a trabajar el primero
                     let acc_id = self.espera_candidatos[0].0;
                     vot_id = self.espera_candidatos[0].1;
                     aux = Some(acc_id);
                     self.usuarios_reg.iter_mut().for_each(|u| { //si ya estas en la espera de candidatos, si o si vas a estar en el vector de usuarios 
                         if u.acc_id == acc_id {
-                            if let Some(vot) = self.votaciones.iter_mut().find(|v| v.id == vot_id){
-                                if aceptar{
+                            if let Some(vot) = self.votaciones.iter_mut().find(|v| v.id == vot_id){  // va a encontrar la votacion si o si ya que esto se checkea al postularse
+                                if aceptar{  // el admin decide si aceptar o rechazar el candidato
                                     vot.sumar_candidato(acc_id);
                                 }
                             }
-                            self.espera_candidatos.remove(0);
+                            self.espera_candidatos.remove(0);  // se elimina de la cola de espera de aprobacion 
                         }
                     })
                 }
@@ -282,6 +278,26 @@ mod sistema {
         }
 
         #[ink(message)]
+        pub fn ver_votos(&mut self,id:i32){
+            
+            
+            let mut x: i32=0;
+            if let Some(v) = self.votaciones.iter_mut().find(|vot| vot.id == id){
+                    ink::env::debug_println!("Candidatos y sus votos actuales");
+                    v.candidatos.iter().for_each(|c|{
+                        x = x.wrapping_add(1);
+                        if let Some(us) =self.usuarios_reg.iter().find(|u|u.acc_id==*c){  //siempre va a entrar ya que si esta como candidato en la votacion si o si esta registrado 
+                            if let Some(op) = x.checked_sub(1) {
+                                    ink::env::debug_println!("Candidato nro {}: {} {}, cant votos: {}",x,us.nombre,us.apellido,v.ver_votos(op));
+
+                            }
+                        }
+                    });
+            }
+        }
+
+
+        #[ink(message)]
         pub fn get_cant_usuarios(&self)->i32{
             let x =self.usuarios_reg.len();
             x as i32
@@ -302,7 +318,7 @@ mod sistema {
         #[ink(message)]
         pub fn get_cant_candidatos_vot(&self,id:i32)->i32{
             if let Some(vot) =self.votaciones.iter().find(|v| v.id == id){
-                return vot.get_cant_candidatos_vot(id);
+                return vot.get_cant_candidatos_vot();
             }
             0
         }
@@ -310,7 +326,7 @@ mod sistema {
         #[ink(message)]
         pub fn get_cant_votantes_vot(&self,id:i32)->i32{
             if let Some(vot) =self.votaciones.iter().find(|v| v.id == id){
-                return vot.get_cant_votantes_vot(id);
+                return vot.get_cant_votantes_vot();
             }
             0
         }
