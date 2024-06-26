@@ -45,9 +45,54 @@ mod sistema {
     )]
     #[derive(Debug)]
     pub struct Fecha{
-        pub dia:i32,
-        pub mes:i32,
+        pub dia:u32,
+        pub mes:u32,
         pub anio:i32
+    }
+    impl Fecha {
+        pub fn to_timestamp(&self) -> Timestamp {
+            let days_since_epoch = self.days_since_epoch() as i64;
+            let millis_per_day: i64 = 24 * 60 * 60 * 1000;
+            days_since_epoch.wrapping_mul(millis_per_day)  as Timestamp
+        }
+    
+        fn days_since_epoch(&self) -> u32 {
+            let mut days: u32 = 0;
+    
+            // Calcular los días desde el Epoch hasta el año actual
+            for year in 1970..self.anio {
+                days = days.wrapping_add(if self.is_leap_year(year) { 366 } else { 365 });
+            }
+    
+            // Sumar los días de los meses previos en el año actual
+            for month in 1..self.mes {
+                days = days.wrapping_add(self.days_in_month(month));
+            }
+    
+            // Sumar los días del mes actual
+            days = days.wrapping_add(self.dia);
+    
+            days
+        }
+    
+        fn is_leap_year(&self, year: i32) -> bool {
+            (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+        }
+    
+        fn days_in_month(&self, month: u32) -> u32 {
+            match month {
+                1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+                4 | 6 | 9 | 11 => 30,
+                2 => {
+                    if self.is_leap_year(self.anio) {
+                        29
+                    } else {
+                        28
+                    }
+                }
+                _ => panic!("Mes inválido"),
+            }
+        }
     }
 
 
@@ -64,11 +109,11 @@ mod sistema {
         votantes: Vec<AccountId>,
         votos: Vec<u32>,    // hashmap con accountid de candidato
         votaron: Vec<AccountId>,
-        fecha_inicio:Fecha,
-        fecha_fin:Fecha,
+        fecha_inicio:Timestamp,
+        fecha_fin:Timestamp,
     }
     impl Votacion{
-        pub fn new(id:i32,puesto:String, fecha_inicio:Fecha, fecha_fin:Fecha)-> Votacion{
+        pub fn new(id:i32,puesto:String, fecha_inicio:Timestamp, fecha_fin:Timestamp)-> Votacion{
             Votacion {
                 id, puesto, candidatos:Vec::new(),votantes:Vec::new(), votos:Vec::new(), votaron:Vec::new(),fecha_inicio, fecha_fin
             }
@@ -161,9 +206,13 @@ mod sistema {
             let caller = self.env().caller();
             if caller == self.admin {  //solo el administrador puede crear votaciones
                 if !self.votaciones.iter().any(|v|v.id==id){  //no se tiene que poder crear dos votaciones con el mismo id
-                    let v = Votacion::new(id, puesto, fecha_inicio, fecha_fin);
-                    self.votaciones.push(v);        
+                    let v = Votacion::new(id, puesto, fecha_inicio.to_timestamp(),fecha_fin.to_timestamp());
+                    self.votaciones.push(v);       
+                    ink::env::debug_println!("fecha inicio: {:?} timestamp: {}",fecha_inicio,fecha_inicio.to_timestamp().wrapping_sub(86_400_000)); //asi comienza ese dia a las 00:00
+                    ink::env::debug_println!("fecha fin: {:?} timestamp: {}",fecha_fin,fecha_fin.to_timestamp().wrapping_sub(1));  //asi termina ese dia a las 23:59:59.999
+
                 }
+
             }
                 
         }
@@ -211,7 +260,7 @@ mod sistema {
                 ink::env::debug_println!("Aceptar solicitud de candidato del usuario con id {:?} para la votacion de id {}",a,vot_id);
 
             } else{
-                ink::env::debug_println!("No hay solicitudes para candidatos");
+                ink::env::debug_println!("No hay solicitudes para candidatos   timestamp {}",self.env().block_timestamp());
 
             }
         }
