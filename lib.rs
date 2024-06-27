@@ -213,13 +213,14 @@ mod sistema {
 
     impl Sistema {
         
+        //Constructor que recibe unicamente el nombre del administrador
         #[ink(constructor)]
         pub fn new(nombre_administrador: String) -> Self {
             Self { nombre_administrador,espera_usuarios:Vec::new(),espera_candidatos:Vec::new(),espera_votantes:Vec::new(), usuarios_reg:Vec::new(),votaciones: Vec::new(), admin: Self::env().caller() }
         }
 
 
-
+        //Crea un usuario verificando que no sea el administrador y que no este repetido y lo agrega a la lista de espera de aprobacion del administrador
         #[ink(message)]
         pub fn registrar_usuario(&mut self, nom:String,apellido:String,edad:i32, dni:i32){
             let caller = self.env().caller();
@@ -233,6 +234,7 @@ mod sistema {
             }
         }
 
+        //Unicamente el administrador puede validar o rechazar un usuario que solicito registrarse
         #[ink(message)] 
         pub fn validar_usuario(&mut self, aceptar:bool){
             let mut aux: Option<String> = None;
@@ -259,6 +261,8 @@ mod sistema {
             }
         }
 
+
+        //Unicamente el administrador puede crear una votacion. No puede haber dos votaciones con el mismo id y las fechas de inicio y fin deben ser validas
         #[ink(message)]
         pub fn crear_votacion(&mut self, id:i32, puesto:String,fecha_inicio:Fecha,fecha_fin:Fecha){ 
             let caller = self.env().caller();
@@ -277,7 +281,7 @@ mod sistema {
                 
         }
 
-
+        //Los usuarios que se registraron y ya fueron validados por el administrador pueden postularse como candidato o como votante a una votacion (antes de que esta haya comenzado), y esperar a que el administrador los acepte o rechace
         #[ink(message)]
         pub fn postularse_a_votacion(&mut self,rol:Rol, id_de_votacion:i32){
             let caller = self.env().caller();
@@ -288,7 +292,7 @@ mod sistema {
                             panic!("LA VOTACION YA INICIO timestamp vot:{}",v.fecha_inicio);
                         }
                         if !v.es_votante(caller) && !v.es_candidato(caller){ // si ya no esta postulado como votante o candidato
-                            match rol{ // AGREGAR la verificacion para cada uno de que la votacion este vigente (fechas) como para postularse como votante o que no haya empezado para postularse como candidato 
+                            match rol{ 
                                 Rol::Candidato=>{ self.espera_candidatos.push((caller,id_de_votacion)); }, 
                                 Rol::Votante=> {  self.espera_votantes.push((caller,id_de_votacion)); }
                             }
@@ -301,7 +305,7 @@ mod sistema {
 
         }
 
-
+        //Unicamente el administrador puede validar o rechazar candidatos para las votaciones, siempre y cuando esta votacion no haya comenzado
         #[ink(message)] 
         pub fn validar_candidato(&mut self, aceptar:bool){
             let mut aux: Option<String> = None;
@@ -323,6 +327,7 @@ mod sistema {
                             aux = Some(s1); 
                             if let Some(vot) = self.votaciones.iter_mut().find(|v| v.id == vot_id){  // va a encontrar la votacion si o si ya que esto se checkea al postularse
                                 if vot.inicio(momento){
+                                    //CAPAZ HAY QUE ELIMINAR DEL VECTOR ACA PORQUE SINO SE VA A QUEDAR SIEMPRE EN PANIC
                                     panic!("LA VOTACION YA INICIO");
                                 }
                                 if aceptar{  // el admin decide si aceptar o rechazar el candidato
