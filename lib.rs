@@ -28,14 +28,19 @@ mod sistema {
         nombre:String,
         apellido:String,
         edad:i32,
-        dni:i32,
+        dni:i128,
         verificado:bool,
         rol:Option<Rol>,
         acc_id:AccountId
     }
+    impl PartialEq for Usuario{
+        fn eq(&self, other: &Self) -> bool {
+            self.dni == other.dni && self.acc_id == other.acc_id
+        }
+    }
     impl Usuario{
 
-        pub fn new(nombre:String,apellido:String,dni:i32,edad:i32,verificado:bool,rol:Option<Rol>,acc_id:AccountId)->Self{
+        pub fn new(nombre:String,apellido:String,dni:i128,edad:i32,verificado:bool,rol:Option<Rol>,acc_id:AccountId)->Self{
             Self{nombre,apellido,dni,edad,verificado,rol,acc_id}
         }
     }
@@ -70,7 +75,7 @@ mod sistema {
                     _=> {}
                 }
             }
-            return false;
+            false
         }
 
         pub fn to_timestamp(&self) -> Timestamp {
@@ -157,11 +162,11 @@ mod sistema {
         }
         
         pub fn inicio(&self, momento:Timestamp)->bool{  // trabajar con fechas
-            return momento > self.fecha_inicio
+            momento > self.fecha_inicio
         }
 
         pub fn finalizo(&self, momento:Timestamp)->bool{ // trabajar con fechas
-           return momento > self.fecha_fin
+            momento > self.fecha_fin
         }
 
 
@@ -222,21 +227,37 @@ mod sistema {
 
         //Crea un usuario verificando que no sea el administrador y que no este repetido y lo agrega a la lista de espera de aprobacion del administrador
         #[ink(message)]
-        pub fn registrar_usuario(&mut self, nom:String,apellido:String,edad:i32, dni:i32){
+        pub fn registrar_usuario(&mut self, nom:String,apellido:String,edad:i32, dni:i128) {
+            self.registrar_usuario_impl(nom, apellido, edad, dni);
+        }
+
+        fn registrar_usuario_impl(&mut self, nom:String,apellido:String,edad:i32, dni:i128) {
             let caller = self.env().caller();
-            if caller != self.admin{  //el administrador no se puede registrar como un usuario 
-                let aux:Usuario = Usuario::new(nom, apellido, dni,edad,false, None, caller);
+            if caller != self.admin {  //el administrador no se puede registrar como un usuario 
+                let aux: Usuario = Usuario::new(nom, apellido, dni, edad, false, None, caller);
                 if edad >= 18 {
-                    if  !self.usuarios_reg.iter().any(|u| u.dni == dni || u.acc_id == caller){  // no puede haber dos usuarios con el mismo dni 
-                        self.espera_usuarios.push(aux);
+                    if  !self.usuarios_reg.iter().any(|u| u.dni == dni || u.acc_id == caller) {  // no puede haber dos usuarios con el mismo dni 
+                        if !self.espera_usuarios.contains(&aux){
+                            self.espera_usuarios.push(aux);
+                        }else{
+                            panic!("ESTE USUARIO YA ESTA EN ESPERA DE VALIDACION");
+                        }
+                        
+                    }else{
+                        panic!("CUENTA O DNI YA REGISTRADO");
                     }
                 }
             }
         }
 
+
         //Unicamente el administrador puede validar o rechazar un usuario que solicito registrarse
         #[ink(message)] 
-        pub fn validar_usuario(&mut self, aceptar:bool){
+        pub fn validar_usuario(&mut self, aceptar: bool) {
+            self.validar_usuario_impl(aceptar);
+        }
+    
+        fn validar_usuario_impl(&mut self, aceptar:bool){
             let mut aux: Option<String> = None;
             let caller = self.env().caller();
             if caller == self.admin {  // solo el administrador puede validar candidatos 
@@ -262,9 +283,13 @@ mod sistema {
         }
 
 
-        //Unicamente el administrador puede crear una votacion. No puede haber dos votaciones con el mismo id y las fechas de inicio y fin deben ser validas
+        //Unicamente el administrador puede crear una votacion. No puede haber dos votaciones con el mismo id y las fechas de inicio y fin deben ser validas        #[ink(message)]
         #[ink(message)]
-        pub fn crear_votacion(&mut self, id:i32, puesto:String,fecha_inicio:Fecha,fecha_fin:Fecha){ 
+        pub fn crear_votacion(&mut self, id:i32, puesto:String, inicio:Fecha, fin:Fecha) {
+            self.crear_votacion_impl(id, puesto, inicio, fin);
+        }
+
+        fn crear_votacion_impl(&mut self, id:i32, puesto:String,fecha_inicio:Fecha,fecha_fin:Fecha){ 
             let caller = self.env().caller();
             if !fecha_inicio.es_fecha_valida() | !fecha_fin.es_fecha_valida(){
                 panic!("FECHA INVALIDA");
@@ -283,7 +308,12 @@ mod sistema {
 
         //Los usuarios que se registraron y ya fueron validados por el administrador pueden postularse como candidato o como votante a una votacion (antes de que esta haya comenzado), y esperar a que el administrador los acepte o rechace
         #[ink(message)]
-        pub fn postularse_a_votacion(&mut self,rol:Rol, id_de_votacion:i32){
+        pub fn postularse_a_votacion(&mut self,rol:Rol, id_de_votacion:i32) {
+            self.postularse_a_votacion_impl(rol,id_de_votacion);
+        }
+
+       
+        fn postularse_a_votacion_impl(&mut self,rol:Rol, id_de_votacion:i32){
             let caller = self.env().caller();
             let momento = self.env().block_timestamp();
                 if self.usuarios_reg.iter().any(|u| u.acc_id == caller){   // como el administrador no puede registrarse, si se intenta postular aca va a dar falso
@@ -292,22 +322,33 @@ mod sistema {
                             panic!("LA VOTACION YA INICIO timestamp vot:{}",v.fecha_inicio);
                         }
                         if !v.es_votante(caller) && !v.es_candidato(caller){ // si ya no esta postulado como votante o candidato
-                            match rol{ 
+                            if !self.espera_candidatos.contains(&(caller,id_de_votacion)) && !self.espera_votantes.contains(&(caller,id_de_votacion)){
+                                match rol{ 
                                 Rol::Candidato=>{ self.espera_candidatos.push((caller,id_de_votacion)); }, 
                                 Rol::Votante=> {  self.espera_votantes.push((caller,id_de_votacion)); }
+                                }
+                            }else{
+                                panic!("YA TE POSTULASTE A ESTA VOTACION");
                             }
+                            
                         }
                     }else{
                         panic!("NO EXISTE VOTACION DE ID: {}",id_de_votacion);
                     } 
+                } else {
+                    panic!("NO ESTAS REGISTRADO O VALIDADO EN EL SISTEMA");
                 }
             ink::env::debug_println!("timestamp actual: {}",momento);
 
         }
 
         //Unicamente el administrador puede validar o rechazar candidatos para las votaciones, siempre y cuando esta votacion no haya comenzado
-        #[ink(message)] 
-        pub fn validar_candidato(&mut self, aceptar:bool){
+        #[ink(message)]
+        pub fn validar_candidato(&mut self, aceptar: bool) {
+            self.validar_candidato_impl(aceptar);
+        }
+        
+        fn validar_candidato_impl(&mut self, aceptar:bool){
             let mut aux: Option<String> = None;
             let mut vot_id=0;
             let caller = self.env().caller();
@@ -326,9 +367,8 @@ mod sistema {
                             s1.push_str(&s3);
                             aux = Some(s1); 
                             if let Some(vot) = self.votaciones.iter_mut().find(|v| v.id == vot_id){  // va a encontrar la votacion si o si ya que esto se checkea al postularse
-                                if vot.inicio(momento){
-                                    //CAPAZ HAY QUE ELIMINAR DEL VECTOR ACA PORQUE SINO SE VA A QUEDAR SIEMPRE EN PANIC
-                                    panic!("LA VOTACION YA INICIO");
+                                if vot.inicio(momento){ // Si la votacion ya inicio el administrador no deberia poder aceptarlo o rechazarlo, asique se "descarta" la solicituda de candidato
+                                    self.espera_candidatos.remove(0);
                                 }
                                 if aceptar{  // el admin decide si aceptar o rechazar el candidato
                                     vot.sumar_candidato(acc_id);
@@ -338,6 +378,8 @@ mod sistema {
                         }
                     })
                 }
+            }else{
+                panic!("SOLO EL ADMINISTRADOR PUEDE VALIDAR CANDIDATOS");
             }
             if let Some(a) =aux{
                 ink::env::debug_println!("Aceptar solicitud de candidato del usuario {:?} para la votacion de id {}",a,vot_id);
@@ -348,8 +390,13 @@ mod sistema {
             }
         }
 
-        #[ink(message)] 
-        pub fn validar_votante(&mut self, aceptar:bool){
+        //Unicamente el administrador puede validar o rechazar votantes para las votaciones, siempre y cuando esta votacion no haya comenzado
+        #[ink(message)]
+        pub fn validar_votante(&mut self, aceptar: bool) {
+            self.validar_votante_impl(aceptar);
+        }
+
+        fn validar_votante_impl(&mut self, aceptar:bool){
             let mut aux: Option<String> = None;
             let mut vot_id=0;
             let caller = self.env().caller();
@@ -369,7 +416,7 @@ mod sistema {
                             aux = Some(s1); 
                             if let Some(vot) = self.votaciones.iter_mut().find(|v| v.id == vot_id){
                                 if vot.inicio(momento){
-                                    panic!("LA VOTACION YA INICIO");
+                                    self.espera_votantes.remove(0);
                                 }
                                 if aceptar{
                                     vot.sumar_votante(acc_id);
@@ -379,6 +426,8 @@ mod sistema {
                         }
                     })
                 }
+            }else{
+                panic!("SOLO EL ADMINISTRADOR PUEDE VALIDAR VOTANTES");
             }
             if let Some(a) =aux{
                 ink::env::debug_println!("Aceptar solicitud de votante del usuario {:?} para la votacion de id {}",a,vot_id);
@@ -390,8 +439,13 @@ mod sistema {
         }
 
 
+        //El votante puede votar validando su identidad (debe estar registrado y validado por el administrador) 
         #[ink(message)]
-        pub fn votar(&mut self,id_de_votacion:i32,opcion:i32){
+        pub fn votar(&mut self, id_de_votacion: i32, opcion:i32) {
+            self.votar_impl(id_de_votacion, opcion);
+        }
+        
+        fn votar_impl(&mut self,id_de_votacion:i32,opcion:i32){
             let caller = self.env().caller();
             let mut x: i32  = 0;
             let momento = self.env().block_timestamp();
@@ -404,7 +458,7 @@ mod sistema {
                         if v.finalizo(momento){
                             panic!("LA VOTACION FINALIZO");
                         }
-                        if v.es_votante(caller){
+                        if v.es_votante(caller){ //Los candidatos de una votacion no van a poder votar en esa misma ya que no van a estar registrados como votantes 
                             ink::env::debug_println!("Candidatos");
                             v.candidatos.iter().for_each(|c|{
                                 x = x.wrapping_add(1);
@@ -413,13 +467,11 @@ mod sistema {
                                 }
                                 
                             });
-
                             if let Some(op) = opcion.checked_sub(1) {
                                 if op as usize <= v.candidatos.len() {
                                     v.sumar_voto(op as usize);
                                 }
                             }
-                            
                         }
                     }else{
                         panic!("NO EXISTE VOTACION DE ID: {}",id_de_votacion);
@@ -441,12 +493,14 @@ mod sistema {
                         if let Some(us) =self.usuarios_reg.iter().find(|u|u.acc_id==*c){  //siempre va a entrar ya que si esta como candidato en la votacion si o si esta registrado 
                             if let Some(op) = x.checked_sub(1) {
                                     ink::env::debug_println!("Candidato nro {}: {} {}, cant votos: {}",x,us.nombre,us.apellido,v.ver_votos(op));
-
                             }
                         }
                     });
             }
         }
+
+
+        //BORRAR GETTERS, SON SOLO PARA CHEQUEO
 
 
         #[ink(message)]
